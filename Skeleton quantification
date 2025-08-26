@@ -1,0 +1,48 @@
+library(EBImage)
+library(tidyverse)
+
+# === Define the base path interactively ===
+base_path <- choose.dir(caption = "Select the folder with processed tube images")
+
+subfolders <- list.dirs(base_path, full.names = TRUE, recursive = TRUE)
+image_files <- list.files(subfolders, pattern = "\\.tif$", full.names = TRUE)
+
+compute_neighbors <- function(skeleton) {
+  skeleton[skeleton > 0] <- 1
+  kernel <- matrix(1, nrow = 3, ncol = 3)
+  kernel[2, 2] <- 0
+  filter2(skeleton, kernel)
+}
+process_image <- function(image_path) {
+  img <- readImage(image_path)
+  
+  if (numberOfFrames(img, type = "render") > 1) {
+    img <- channel(img, "gray")
+  }
+  
+  skeleton <- img > 0
+  skeleton_array <- as.array(skeleton)
+  skeleton_array[skeleton_array > 0] <- 1
+  
+  # Total length = number of white pixels in skeleton
+  total_length <- sum(skeleton_array)
+  
+  # Number of loops = number of connected components
+  labeled <- bwlabel(skeleton_array)
+  num_loops <- length(unique(labeled)) - 1
+  
+  # Return result
+  data.frame(
+    Image = basename(image_path),
+    Total_Length = total_length,
+    Num_Loops = num_loops
+  )
+}
+
+# === Process all images and combine results ===
+results <- lapply(image_files, process_image)
+final_results <- bind_rows(results)
+
+output_path <- file.path(base_path, "tube_quantification_output.csv")
+write.csv(final_results, output_path, row.names = FALSE)
+print(final_results)
